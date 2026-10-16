@@ -1,0 +1,55 @@
+:root {
+  color-scheme: dark;
+  --bg: #0a0b0f;
+  --bg-2: #0e1015;
+  --surface: #14161d;
+  --surface-2: #1a1d26;
+  --surface-3: #222632;
+  --surface-4: #2b3040;
+  --line: #262a37;
+  --line-2: #343a4c;
+  --text: #eef0f6;
+  --text-2: #b6bbcc;
+  --text-3: #80869b;
+  --text-4: #5d6377;
+
+  --deck-a: #ff8a4c;
+  --deck-a-2: #ffb085;
+  --deck-a-soft: rgba(255, 138, 76, 0.14);
+  --deck-b: #38d0c0;
+  --deck-b-2: #8ee8de;
+  --deck-b-soft: rgba(56, 208, 192, 0.14);
+  --accent: #b39dff;
+  --accent-2: #d3c6ff;
+  --accent-soft: rgba(179, 157, 255, 0.14);
+  --ok: #5ad48a;
+  --warn: #f5c451;
+  --danger: #ff5d6c;
+  --danger-soft: rgba(255, 93, 108, 0.14);
+
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 18px;
+  --r-xl: 24px;
+
+  --font-ui: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Space Grotesk Variable', 'Space Grotesk', var(--font-ui);
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 18px 48px rgba(0, 0, 0, 0.55);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --nav-w: 232px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ease: linear;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
