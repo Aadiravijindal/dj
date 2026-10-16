@@ -66,7 +66,7 @@ export function Onboarding() {
                   engine.resume();
                   openSample('sunset-house');
                   setCoach('first-mix');
-                  setShow(false);
+                  finish();
                 }}
               >
                 <Disc3 size={22} />
@@ -77,7 +77,7 @@ export function Onboarding() {
                 className="onboard-choice"
                 onClick={() => {
                   setCoach('first-mix');
-                  setShow(false);
+                  finish();
                   go('library');
                 }}
               >

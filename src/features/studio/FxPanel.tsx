@@ -158,7 +158,7 @@ function FxCard({ deck, name, f, pro }: { deck: DeckId; name: FxName; f: FxSetti
       break;
   }
   return (
-    <div className={`fx-card${on ? ' on' : ''}`} style={{ ['--deck' as string]: color }} data-testid={`fx-${name}-${deck}`}>
+    <div className={`fx-card${on ? ' on' : ''}`} style={{ ['--deck' as string]: color }} data-testid={`fx-card-${name}-${deck}`}>
       <div className="fx-card-head">
         <Icon size={16} />
         <b>{m.name}</b>
