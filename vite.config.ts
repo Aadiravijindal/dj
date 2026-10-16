@@ -8,14 +8,14 @@ function mixplayApi(): Plugin {
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         if (!req.url?.startsWith('/api/')) return next();
-        const { handleApi } = (await server.ssrLoadModule('/server/api.ts')) as typeof import('./server/api');
+        const { handleApi } = (await server.ssrLoadModule('/server/api.ts')) as typeof import('./server/api.ts');
         handleApi(req, res).catch(next);
       });
     },
     configurePreviewServer(server) {
       server.middlewares.use(async (req, res, next) => {
         if (!req.url?.startsWith('/api/')) return next();
-        const { handleApi } = await import('./server/api');
+        const { handleApi } = await import('./server/api.ts');
         handleApi(req, res).catch(next);
       });
     },
@@ -29,6 +29,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), mixplayApi()],
     worker: { format: 'es' },
+    build: { chunkSizeWarningLimit: 900 },
     server: { port: 5173 },
     test: {
       include: ['tests/unit/**/*.test.ts'],

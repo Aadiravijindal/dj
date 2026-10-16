@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Plus, Copy, Trash2, ChevronLeft, ChevronRight, Play, Flag, Columns2, BarChart3, Info, GripVertical, Search } from 'lucide-react';
 import { useApp, toast } from '../../state/store';
 import type { Arrangement, DeckId, TimelineItem, TransitionKind } from '../../project/types';
@@ -50,7 +50,13 @@ function EnergySpark({ trackId, start, end, w = 160, h = 34 }: { trackId: string
 function TrackPicker({ onPick, onClose }: { onPick: (m: TrackMeta) => void; onClose: () => void }) {
   const [q, setQ] = useState('');
   const [res, setRes] = useState<TrackMeta[] | null>(null);
-  if (res === null) searchAll('').then(setRes);
+  useEffect(() => {
+    let live = true;
+    searchAll(q).then((r) => live && setRes(r));
+    return () => {
+      live = false;
+    };
+  }, [q]);
   return (
     <Modal title="Add a track to the timeline" onClose={onClose} wide>
       <div className="search-box" style={{ marginBottom: 12 }}>
@@ -61,10 +67,7 @@ function TrackPicker({ onPick, onClose }: { onPick: (m: TrackMeta) => void; onCl
           placeholder="Search title, artist, genre, BPM…"
           value={q}
           aria-label="Search tracks"
-          onChange={(e) => {
-            setQ(e.target.value);
-            searchAll(e.target.value).then(setRes);
-          }}
+          onChange={(e) => setQ(e.target.value)}
         />
       </div>
       <div className="stack">
