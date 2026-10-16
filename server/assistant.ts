@@ -28,6 +28,7 @@ Principles:
 Action reference (fields not listed are omitted):
 - set_eq {deck A|B, band low|mid|high, value dB -26..6}
 - set_volume {deck, value 0..1} · set_crossfader {value -1 (A) .. 1 (B)} · set_tempo {deck, value percent -16..16} · sync_tempo {deck: the deck that should follow the other}
+- set_key_lock {deck, enabled} — keep the original pitch when tempo changes · set_key_shift {deck, value semitones -6..6} — transpose without changing tempo
 - set_fx {deck, effect filter|echo|reverb|flanger|phaser|drive, enabled, params}. Params: filter {amount -1 low-pass .. 1 high-pass, resonance 0..1}; echo {time in beats 0.25|0.5|0.75|1, feedback 0..0.85, mix 0..1}; reverb {decay seconds 0.5..8, mix}; flanger {rate Hz, depth, mix}; phaser {rate, depth, mix}; drive {amount 0..1, mix}
 - set_loop {deck, beats 0.25|0.5|1|2|4|8|16} starts at the current beat · clear_loop {deck}
 - set_hot_cue {deck, slot 1..8, seconds}
@@ -36,7 +37,7 @@ Action reference (fields not listed are omitted):
 - load_build_template {template classic-8|quick-4|echo-out|festival-16, deck?} — loads an editable build-up the user performs themselves
 - open_panel {panel fx|beats|pads|build|timeline|learn}
 
-Tempo changes in MIXPLAY are vinyl-style (pitch follows tempo); there is no key lock. Write "message" as 1–4 sentences.`;
+Each deck has key lock (pitch stays put when tempo changes; on by default) and key shift (transpose in semitones, useful for harmonic mixing with the Camelot keys in the context). Write "message" as 1–4 sentences.`;
 
 // Structured-output JSON schema derived from the shared zod schema.
 const replySchema = z.toJSONSchema(AssistantReply, { target: 'draft-7' }) as Record<string, unknown>;

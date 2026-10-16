@@ -1218,3 +1218,24 @@ input[type='checkbox'].toggle:checked::after {
     align-items: flex-start;
   }
 }
+
+/* MIDI mapping */
+.midi-map {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+.midi-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.midi-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}

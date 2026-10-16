@@ -16,6 +16,8 @@ export const uid = (prefix = '') =>
 export const defaultDeck = (): DeckSettings => ({
   trackId: null,
   tempo: 0,
+  keyLock: true,
+  keyShift: 0,
   tempoRange: 8,
   cue: 0,
   hotCues: Array(8).fill(null),

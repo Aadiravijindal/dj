@@ -16,6 +16,8 @@ const deck = (id: 'A' | 'B', o: Partial<DeckSnap> = {}): DeckSnap => ({
   bpmSource: 'composed',
   effectiveBpm: 124,
   tempo: 0,
+  keyLock: true,
+  keyShift: 0,
   key: 'A minor · 8A',
   section: 'Groove',
   loop: null,
@@ -45,6 +47,8 @@ describe('action validation', () => {
     expect(validateAction({ type: 'set_fx', deck: 'B', effect: 'echo', params: { feedback: 3, mix: -1 } })?.params).toEqual({ feedback: 0.85, mix: 0 });
     expect(validateAction({ type: 'set_loop', deck: 'A', beats: 1.8 })?.beats).toBe(2);
     expect(validateAction({ type: 'set_tempo', deck: 'A', value: 99 })?.value).toBe(16);
+    expect(validateAction({ type: 'set_key_shift', deck: 'B', value: 9.4 })?.value).toBe(6);
+    expect(validateAction({ type: 'set_key_lock', deck: 'B' })).toBeNull();
   });
   it('rejects actions missing required fields', () => {
     expect(validateAction({ type: 'set_eq', deck: 'A', value: 2 })).toBeNull();
@@ -74,6 +78,7 @@ describe('demo assistant', () => {
     'I want to create a festival-style drop.',
     'What does a low-pass filter do?',
     'how do I scratch?',
+    'why does it sound chipmunky when I speed up?',
     'blah',
   ];
   it.each(prompts)('returns a schema-valid reply for “%s”', (p) => {

@@ -33,11 +33,14 @@ src/
 ## Signal graph
 
 ```
-Deck A source ─► Deck A out ─► Channel A: trim ─► low/mid/high EQ ─► FX rack ─► fader ─► xfade ─► mute ─┐
+Deck A source ─► pitch worklet (key lock / key shift) ─► Deck A out ─► Channel A: trim ─► low/mid/high EQ ─► FX rack ─► fader ─► xfade ─► mute ─┐
 Deck B source ─► Deck B out ─► Channel B: …                                                            ├─► master sum ─► master gain ─► limiter ─► speakers
 Pads (sampler) ──────────────────────────────────────────────────────────────────────────────────────┤        │
 Sequencer ───────────────────────────────────────────────────────────────────────────────────────────┘        └─► pre-limiter analyser (clip LED)
-FX rack outputs ─► cue taps ─► cue bus ─► MediaStreamDestination ─► <audio>.setSinkId(headphones)
+Scratch worklet ─► pitch worklet (while the platter is held)
+FX rack outputs ─► cue taps ─► cue bus ─┬─► split cue: [master mono → left, cue mono → right] ─► speakers/headphones
+                                         └─► MediaStreamDestination ─► <audio>.setSinkId(second device)
+Pads / sequencer ─► 20 ms delay (matches the pitch worklet's latency) ─► master sum
 ```
 
 FX rack: `in → drive (dry/wet) → low-pass → high-pass → { dry, echo send → delay⟲, reverb send → convolver, flanger send → modulated delay⟲, phaser send → 4 allpass } → out`. Every feedback gain is capped (≤ 0.85) and a limiter sits on the master, so no combination can run away. All parameter changes use `setTargetAtTime` to avoid zipper noise and clicks; source starts/stops use 4 ms fades.
@@ -48,7 +51,8 @@ FX rack: `in → drive (dry/wet) → low-pass → high-pass → { dry, echo send
 - **Loops** use `AudioBufferSourceNode.loopStart/loopEnd`, i.e. sample-accurate, and snap to the beat grid when quantize is on.
 - **Sequencer and Build & Drop** use the look-ahead pattern: a light timer schedules events ~120 ms ahead on the `AudioContext` clock. The sequencer re-locks to its followed deck on every beat, so tempo changes, seeks and loops don't drift.
 - **Pads** fire on the next 16th note (loops on the next bar) of the deck closest to the crossfader.
-- **Scratch** switches between the forward buffer and a lazily built reversed buffer, matching playback rate to hand speed and re-syncing when drift exceeds 60 ms.
+- **Key lock** sends each deck through `mixplay-pitch` (`src/audio/worklets/processors.js`), whose ratio is `2^(keyShift/12) / tempoRate` when key lock is on. It always delays by half its window, so toggling it never shifts the beat; pads and the sequencer get the same delay.
+- **Scratch** hands the deck's PCM to `mixplay-scratch`, which moves a virtual record towards the hand position with a critically damped spring and reads it with cubic interpolation. Without AudioWorklet it falls back to restarting forward/reversed buffer sources.
 
 ## State and persistence
 
@@ -87,7 +91,7 @@ Enforce ownership on every query (`where owner_id = $session_user`), validate `d
 
 `CatalogProvider` (`src/catalog/types.ts`) defines `search`, `getTrack`, `checkAvailability`, `requestPlayback` and a `status()` that declares what the provider legally permits (mix, effects, loop/sample, saving references). The registry routes by the `provider:` prefix of a track id. To add a licensed catalog: implement the interface using the provider's actual playback API and terms (typically a server-side token exchange plus an authorised stream), register it, and the studio, library, timeline and projects work unchanged. `PLANNED_INTEGRATIONS` lists such catalogs as *not connected* — they are never presented as working.
 
-The demo provider renders original compositions (`audio/synth/composer.ts`) in a Web Worker at 32 kHz, caching the three most recent results; analysis (waveform, band colours, per-bar energy, loudness) is computed from the rendered audio.
+The demo provider renders original compositions (`audio/synth/composer.ts`) in Web Workers at 32 kHz. Renders are stored in IndexedDB as 16-bit PCM plus their analysis (`catalog/pcmCache.ts`, versioned), and one worker pre-renders the current mix and then the whole catalog in the background while real requests use the other workers. Analysis (waveform, band colours, per-bar energy, loudness) is computed from the rendered audio.
 
 ## AI assistant
 
@@ -107,4 +111,4 @@ The demo provider renders original compositions (`audio/synth/composer.ts`) in a
 
 - **Sound packs:** `registerPack()` in `audio/soundLibrary.ts`.
 - **Effects:** add a field to `FxSettings`, wire it in `FxRack.apply`, add a card in `FxPanel`, and (optionally) an action in the assistant schema.
-- **Controllers:** deck/mixer/FX operations are plain methods on the engine and store actions, so a Web MIDI layer can map controls to them directly.
+- **Controllers:** `src/midi/midi.ts` maps Web MIDI messages (`cc:channel:number`, `note:channel:number`) to the `MIDI_ACTIONS` list with MIDI learn; mappings live in the user's settings. Add an action to the list to make it mappable.

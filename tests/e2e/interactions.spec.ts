@@ -23,6 +23,7 @@ test.describe('performance interactions', () => {
     await evalEngine(page, 'e.decks.A.seek(20)');
     await page.getByTestId('play-A').click();
     await page.getByTestId('deck-A').getByRole('button', { name: 'Scratch' }).click();
+    await expect(page.getByTestId('deck-A').getByRole('button', { name: 'Scratch' })).toHaveAttribute('aria-pressed', 'true');
     const platter = page.getByTestId('deck-A').getByRole('slider', { name: /jog wheel/ });
     const box = (await platter.boundingBox())!;
     const cx = box.x + box.width / 2;
@@ -30,6 +31,7 @@ test.describe('performance interactions', () => {
     const r = box.width * 0.4;
     await page.mouse.move(cx + r, cy);
     await page.mouse.down();
+    await expect.poll(() => evalEngine(page, 'e.decks.A.scratching')).toBe(true);
     const start = await evalEngine<number>(page, 'e.decks.A.getPosition()');
     // drag a quarter-turn counter-clockwise (backwards)
     for (let a = 0; a <= 90; a += 10) {

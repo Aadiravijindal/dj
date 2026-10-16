@@ -98,6 +98,10 @@ export interface AppSettings {
   lastProjectId: string | null;
   autosave: boolean;
   cueDeviceId: string | null;
+  cueMode: 'off' | 'split' | 'device';
+  midiEnabled: boolean;
+  /** MIDI message key ("cc:1:7" / "note:1:36") → action id */
+  midiMap: Record<string, string>;
   tips: boolean;
   keyboard: boolean;
   completedLessons: string[];
@@ -113,6 +117,9 @@ export const defaultSettings = (): AppSettings => ({
   lastProjectId: null,
   autosave: true,
   cueDeviceId: null,
+  cueMode: 'off',
+  midiEnabled: false,
+  midiMap: {},
   tips: true,
   keyboard: true,
   completedLessons: [],

@@ -73,7 +73,7 @@ function Strip({ id }: { id: DeckId }) {
             className={`btn icon-btn xs${ch.cue ? ' on' : ''}`}
             aria-pressed={ch.cue}
             aria-label={`Headphone cue deck ${id}`}
-            data-tip={engine.cueRouted ? 'Send this deck to your headphones' : 'Headphone cue: choose a second output device in Settings to hear this separately'}
+            data-tip={engine.cueRouted ? 'Send this deck to your headphones' : 'Headphone cue: turn on Split cue (or pick a second output) in Settings → Audio to hear this separately'}
             onClick={() => set((c) => (c.cue = !c.cue))}
           >
             <Headphones />

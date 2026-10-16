@@ -58,9 +58,9 @@ export class DemoCatalogProvider implements CatalogProvider {
       : { status: 'unavailable', reason: 'This track is not part of the demo catalog.' };
   }
 
-  private worker() {
+  private worker(index?: number) {
     if (this.workers.length === 0) {
-      const n = Math.min(2, Math.max(1, (navigator.hardwareConcurrency ?? 2) - 1));
+      const n = Math.min(3, Math.max(1, (navigator.hardwareConcurrency ?? 2) - 1));
       for (let i = 0; i < n; i++) {
         const w = new Worker(new URL('./demoWorker.ts', import.meta.url), { type: 'module' });
         w.onmessage = (e) => this.onMessage(e.data);
@@ -73,10 +73,28 @@ export class DemoCatalogProvider implements CatalogProvider {
         this.workers.push(w);
       }
     }
-    const w = this.workers[this.nextWorker % this.workers.length];
+    if (index !== undefined) return this.workers[index % this.workers.length];
+    // spread real requests away from the prefetch worker when there is more than one
+    const w = this.workers.length > 1 ? this.workers[1 + (this.nextWorker % (this.workers.length - 1))] : this.workers[0];
     this.nextWorker++;
     return w;
   }
+
+  /**
+   * Render and cache tracks in the background (one worker, one at a time) so
+   * they load instantly later. Already-cached tracks cost a quick lookup.
+   */
+  prefetch(ids: string[]) {
+    if (typeof Worker === 'undefined') return;
+    const w = this.worker(0);
+    for (const id of ids) {
+      if (!this.metas.some((m) => m.id === id) || this.prefetched.has(id)) continue;
+      this.prefetched.add(id);
+      w.postMessage({ reqId: ++this.reqId, local: id.slice(DEMO_PROVIDER_ID.length + 1), sampleRate: RENDER_RATE, prefetch: true });
+    }
+  }
+
+  private prefetched = new Set<string>();
 
   private onMessage(msg: { reqId: number; type: string; progress?: number; message?: string; sampleRate?: number; left?: Float32Array; right?: Float32Array; analysis?: TrackAnalysis }) {
     const p = this.pending.get(msg.reqId);

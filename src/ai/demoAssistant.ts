@@ -373,10 +373,25 @@ export function demoReply(message: string, s: StudioSnap): AssistantReply {
   if (has(q, 'scratch')) {
     return {
       message:
-        'To scratch: 1) Play a track and find a punchy sound (a clap or a synth stab). 2) Turn on “Scratch” under the jog wheel. 3) Grab the wheel — or the zoomed waveform — and push forward and pull back in short, rhythmic strokes. 4) In Pro mode, switch the crossfader curve to “Cut” and flick the crossfader to chop the sound. Browser scratching responds to your movement speed and direction, but it can’t match the feel of a real turntable.',
+        'To scratch: 1) Play a track and find a punchy sound (a clap or a synth stab). 2) Turn on “Scratch” under the jog wheel. 3) Grab the wheel — or the zoomed waveform — and push forward and pull back in short, rhythmic strokes. 4) In Pro mode, switch the crossfader curve to “Cut” and flick the crossfader to chop the sound. The virtual record has weight: it speeds up, slows down and reverses smoothly with your hand, and carries on playing when you let go.',
       terms: [TERMS.scratch],
       suggestions: [],
     };
+  }
+
+  // ---- key lock / key / pitch
+  if (has(q, 'key lock', 'keylock', 'pitch', 'chipmunk', 'harmonic', 'transpose', 'key clash', 'out of key')) {
+    const plain =
+      'Key lock keeps a track at its original pitch when you change its tempo, so speeding up doesn’t make vocals and synths sound “chipmunky”. Key shift moves a track up or down in semitones without changing its tempo — use it to bring two tracks into compatible keys (same or neighbouring Camelot codes).';
+    if (d.loaded)
+      suggestions.push({
+        title: `Key lock on for Deck ${fd}`,
+        outcome: 'Tempo changes without pitch changes',
+        target: fd,
+        explanation: `${deckName(d)} will keep its ${d.key ?? 'original'} key whatever its tempo.`,
+        actions: [{ type: 'set_key_lock', deck: fd, enabled: true }],
+      });
+    return { message: plain, terms: [{ term: 'Key lock & key shift', plain }], suggestions };
   }
 
   // ---- explanations

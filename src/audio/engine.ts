@@ -5,13 +5,16 @@
  *   Deck B → Channel B ┼→ master sum → master gain → [clip meter] → limiter → [meter] → speakers
  *   Sampler (pads)  ───┤
  *   Sequencer       ───┘
- *   Channel cue taps → cue bus → (optional) separate headphone output
+ *   Channel cue taps → cue bus → headphone cue:
+ *     - split mode: master (mono) in the left ear, cue (mono) in the right, on one output
+ *     - device mode: a second output device via HTMLMediaElement.setSinkId
  *
  * The engine knows nothing about React. The UI reads real-time values
  * (playheads, meters) by polling inside requestAnimationFrame, and
  * subscribes to discrete state changes through `subscribe`.
  */
-import { Deck, type DeckEvent } from './deck';
+import { Deck, PITCH_LATENCY, type DeckEvent } from './deck';
+import processorsUrl from './worklets/processors.js?url';
 import { ChannelStrip, crossfadeGains } from './channel';
 import { Sampler } from './sampler';
 import { Sequencer } from './sequencer';
@@ -43,6 +46,14 @@ class AudioEngine {
   private postAnalyser!: AnalyserNode;
   private buf = new Float32Array(1024);
   private cueBus!: GainNode;
+  private normalOut!: GainNode;
+  private splitOut!: GainNode;
+  private padDelay!: DelayNode;
+  private seqDelay!: DelayNode;
+  cueMode: 'off' | 'split' | 'device' = 'off';
+  /** true once the AudioWorklet processors (key lock, key shift, vinyl scratch) are running */
+  workletsReady = false;
+  workletError: string | null = null;
   private cueDest: MediaStreamAudioDestinationNode | null = null;
   private cueEl: HTMLAudioElement | null = null;
   private lastClip = -10;
@@ -79,9 +90,30 @@ class AudioEngine {
     this.postAnalyser = ctx.createAnalyser();
     this.postAnalyser.fftSize = 1024;
     this.masterSum.connect(this.masterGain).connect(this.preAnalyser);
-    this.masterGain.connect(this.limiter).connect(this.postAnalyser).connect(ctx.destination);
+    this.masterGain.connect(this.limiter).connect(this.postAnalyser);
+    this.normalOut = ctx.createGain();
+    this.postAnalyser.connect(this.normalOut).connect(ctx.destination);
 
     this.cueBus = ctx.createGain();
+    // split cue: downmix master and cue to mono, put them in the left/right ears
+    const mono = () => {
+      const g = ctx.createGain();
+      g.channelCount = 1;
+      g.channelCountMode = 'explicit';
+      g.channelInterpretation = 'speakers';
+      return g;
+    };
+    const masterMono = mono();
+    const cueMono = mono();
+    const cueLimiter = ctx.createDynamicsCompressor();
+    cueLimiter.threshold.value = -3;
+    cueLimiter.ratio.value = 20;
+    const merger = ctx.createChannelMerger(2);
+    this.splitOut = ctx.createGain();
+    this.splitOut.gain.value = 0;
+    this.postAnalyser.connect(masterMono).connect(merger, 0, 0);
+    this.cueBus.connect(cueLimiter).connect(cueMono).connect(merger, 0, 1);
+    merger.connect(this.splitOut).connect(ctx.destination);
     this.decks = { A: new Deck('A', ctx), B: new Deck('B', ctx) };
     this.channels = { A: new ChannelStrip(ctx), B: new ChannelStrip(ctx) };
     for (const id of ['A', 'B'] as DeckId[]) {
@@ -99,13 +131,37 @@ class AudioEngine {
     }
     this.sampler = new Sampler(ctx);
     this.padBus = ctx.createGain();
-    this.padBus.connect(this.masterSum);
+    // pads and beats are delayed by the decks' pitch-worklet latency so everything stays in time
+    this.padDelay = ctx.createDelay(0.1);
+    this.padDelay.delayTime.value = 0;
+    this.padBus.connect(this.padDelay).connect(this.masterSum);
     this.sequencer = new Sequencer(ctx, this.sampler, (id) => this.decks[id]);
-    this.sequencer.bus.connect(this.masterSum);
+    this.seqDelay = ctx.createDelay(0.1);
+    this.seqDelay.delayTime.value = 0;
+    this.sequencer.bus.connect(this.seqDelay).connect(this.masterSum);
+    this.loadWorklets();
     this.sequencer.onChange(() => this.bump());
     this.sampler.onChange(() => this.bump());
     ctx.onstatechange = () => this.bump();
     return true;
+  }
+
+  private async loadWorklets() {
+    const ctx = this.ctx!;
+    if (!ctx.audioWorklet) {
+      this.workletError = 'This browser has no AudioWorklet support, so key lock, key shift and vinyl-style scratching are unavailable.';
+      return;
+    }
+    try {
+      await ctx.audioWorklet.addModule(processorsUrl);
+      for (const id of ['A', 'B'] as DeckId[]) this.decks[id].attachWorklets();
+      this.padDelay.delayTime.value = PITCH_LATENCY;
+      this.seqDelay.delayTime.value = PITCH_LATENCY;
+      this.workletsReady = this.decks.A.worklets && this.decks.B.worklets;
+    } catch (e) {
+      this.workletError = `Audio processors failed to load: ${(e as Error).message}`;
+    }
+    this.bump();
   }
 
   /** Must be called from a user gesture (click/tap/key) to satisfy autoplay rules. */
@@ -213,19 +269,41 @@ class AudioEngine {
   // -------------------------------------------------------------- cue output
 
   /**
-   * Route the cue (headphone) bus to a separate output device. Requires
-   * HTMLMediaElement.setSinkId (Chromium-based browsers) and a second device.
+   * Headphone cue routing.
+   *  - 'split': one stereo output; left = master (mono), right = cue (mono). Works
+   *    everywhere with a headphone splitter or by listening on one ear.
+   *  - 'device': cue bus to a second output device (needs HTMLMediaElement.setSinkId).
    */
-  async setCueDevice(deviceId: string | null): Promise<{ ok: boolean; message: string }> {
+  async setCueMode(mode: 'off' | 'split' | 'device', deviceId: string | null = null): Promise<{ ok: boolean; message: string }> {
     if (!this.init()) return { ok: false, message: this.unsupportedReason ?? 'Audio unavailable' };
-    if (!deviceId) {
-      if (this.cueEl) {
-        this.cueEl.pause();
-        this.cueEl.srcObject = null;
-      }
-      return { ok: true, message: 'Headphone cue is off.' };
+    const now = this.ctx!.currentTime;
+    if (mode !== 'device' && this.cueEl) {
+      this.cueEl.pause();
+      this.cueEl.srcObject = null;
     }
-    if (!this.supportsSinkId) return { ok: false, message: 'Your browser cannot send audio to a second output device.' };
+    if (mode === 'device') {
+      const r = await this.setCueDevice(deviceId);
+      if (!r.ok) return r;
+    }
+    this.cueMode = mode;
+    this.normalOut.gain.setTargetAtTime(mode === 'split' ? 0 : 1, now, 0.01);
+    this.splitOut.gain.setTargetAtTime(mode === 'split' ? 1 : 0, now, 0.01);
+    this.bump();
+    return {
+      ok: true,
+      message:
+        mode === 'split'
+          ? 'Split cue on: master in your left ear, cued decks in your right.'
+          : mode === 'device'
+            ? 'Cue goes to your second output device.'
+            : 'Headphone cue is off.',
+    };
+  }
+
+  /** Route the cue (headphone) bus to a separate output device. */
+  private async setCueDevice(deviceId: string | null): Promise<{ ok: boolean; message: string }> {
+    if (!deviceId) return { ok: false, message: 'Choose an output device first.' };
+    if (!this.supportsSinkId) return { ok: false, message: 'Your browser cannot send audio to a second output device. Use split cue instead.' };
     if (!this.cueDest) {
       this.cueDest = this.ctx!.createMediaStreamDestination();
       this.cueBus.connect(this.cueDest);
@@ -242,7 +320,7 @@ class AudioEngine {
   }
 
   get cueRouted() {
-    return !!this.cueEl && !!this.cueEl.srcObject && !this.cueEl.paused;
+    return this.cueMode === 'split' || (!!this.cueEl && !!this.cueEl.srcObject && !this.cueEl.paused);
   }
 
   get mixerSettings() {

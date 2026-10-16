@@ -3,8 +3,12 @@
  *
  * Position is tracked analytically (anchor position + elapsed × rate) so the
  * UI can read the playhead every frame without touching React state. Tempo
- * changes resample the audio (vinyl-style): tempo and pitch move together.
- * Pitch-preserving time-stretch ("key lock") is NOT implemented.
+ * changes resample the audio (vinyl-style). With key lock on, a real-time
+ * pitch shifter (AudioWorklet) cancels the pitch change so only the tempo
+ * moves; key shift transposes independently of tempo. Scratching runs on a
+ * sample-accurate worklet that follows the hand with physical inertia.
+ * Browsers without AudioWorklet fall back to resampling-only playback and a
+ * source-restart scratch.
  */
 import type { TrackMeta } from '../catalog/types';
 import type { TrackAnalysis } from '../audio/analysis';
@@ -22,8 +26,19 @@ const FADE = 0.004;
 /** Seconds of audio represented by one full jog-wheel revolution (like a 33⅓ rpm record). */
 export const SECONDS_PER_REV = 1.8;
 
+/** Fixed latency introduced by the pitch worklet (half its 40 ms window). */
+export const PITCH_LATENCY = 0.02;
+
 export class Deck {
   readonly out: GainNode;
+  /** sources connect here; routed through the pitch worklet when available */
+  private preOut: GainNode;
+  private pitchNode: AudioWorkletNode | null = null;
+  private scratchNode: AudioWorkletNode | null = null;
+  private workletPos = 0;
+  keyLock = false;
+  /** transpose in semitones, independent of tempo */
+  keyShift = 0;
   buffer: AudioBuffer | null = null;
   private reversed: AudioBuffer | null = null;
   meta: TrackMeta | null = null;
@@ -62,6 +77,63 @@ export class Deck {
 
   constructor(readonly id: DeckId, private ctx: AudioContext) {
     this.out = ctx.createGain();
+    this.preOut = ctx.createGain();
+    this.preOut.connect(this.out);
+  }
+
+  get worklets() {
+    return !!this.pitchNode;
+  }
+
+  /** Called by the engine once the AudioWorklet module has loaded. */
+  attachWorklets() {
+    if (this.pitchNode) return;
+    try {
+      const pitch = new AudioWorkletNode(this.ctx, 'mixplay-pitch', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+      const scratch = new AudioWorkletNode(this.ctx, 'mixplay-scratch', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] });
+      this.preOut.disconnect();
+      this.preOut.connect(pitch);
+      scratch.connect(pitch);
+      pitch.connect(this.out);
+      scratch.port.onmessage = (e) => {
+        if (e.data?.type === 'pos') this.workletPos = e.data.pos;
+      };
+      this.pitchNode = pitch;
+      this.scratchNode = scratch;
+      if (this.buffer) this.sendBufferToScratch();
+      this.updatePitch();
+    } catch {
+      /* stay on the plain path */
+    }
+  }
+
+  private sendBufferToScratch() {
+    if (!this.scratchNode || !this.buffer) return;
+    this.scratchNode.port.postMessage({
+      type: 'buffer',
+      left: this.buffer.getChannelData(0).slice(),
+      right: this.buffer.getChannelData(this.buffer.numberOfChannels > 1 ? 1 : 0).slice(),
+      sampleRate: this.buffer.sampleRate,
+    });
+  }
+
+  /** Pitch-shift ratio: undo the tempo's pitch change (key lock) and apply key shift. */
+  private updatePitch() {
+    const p = this.pitchNode ? (this.pitchNode.parameters as unknown as ReadonlyMap<string, AudioParam>).get('ratio') : undefined;
+    if (!p) return;
+    let ratio = Math.pow(2, this.keyShift / 12);
+    if (this.keyLock && !this.scratching) ratio /= this.tempoRate;
+    p.setValueAtTime(Math.max(0.5, Math.min(2, ratio)), this.ctx.currentTime);
+  }
+
+  setKeyLock(on: boolean) {
+    this.keyLock = on;
+    this.updatePitch();
+  }
+
+  setKeyShift(semitones: number) {
+    this.keyShift = Math.max(-6, Math.min(6, semitones));
+    this.updatePitch();
   }
 
   get duration() {
@@ -118,6 +190,7 @@ export class Deck {
     buf.copyToChannel(pcm.right as Float32Array<ArrayBuffer>, 1);
     this.buffer = buf;
     this.reversed = null;
+    this.sendBufferToScratch();
     this.meta = meta;
     this.analysis = analysis;
     this.status = 'ready';
@@ -147,6 +220,7 @@ export class Deck {
   // --------------------------------------------------------------- position
 
   getPosition(): number {
+    if (this.scratching && this.scratchNode) return Math.max(0, Math.min(this.duration, this.workletPos));
     if (!this.src) return this.anchorPos;
     const elapsed = Math.max(0, this.ctx.currentTime - this.anchorTime);
     let pos: number;
@@ -220,7 +294,7 @@ export class Deck {
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(0, now);
     g.gain.linearRampToValueAtTime(1, now + FADE);
-    src.connect(g).connect(this.out);
+    src.connect(g).connect(this.preOut);
     const offset = this.dir > 0 ? pos : Math.max(0, this.duration - pos);
     src.start(now, Math.min(offset, Math.max(0, buf.duration - 0.001)));
     this.src = src;
@@ -301,6 +375,7 @@ export class Deck {
   setTempo(percent: number) {
     this.tempoRate = 1 + percent / 100;
     this.updateRate();
+    this.updatePitch();
   }
 
   /** Temporary pitch bend while held (e.g. ±4%). */
@@ -476,6 +551,56 @@ export class Deck {
   scratchStart() {
     if (!this.buffer) return;
     this.cancelBrake();
+    if (this.scratchNode) {
+      const pos = this.getPosition();
+      const velocity = this.playing && this.src ? this.rate : 0;
+      this.stopSource();
+      this.scratchWasPlaying = this.playing;
+      this.scratching = true;
+      this.scratchCount++;
+      this.scratchPos = pos;
+      this.workletPos = pos;
+      this.anchorPos = pos;
+      this.updatePitch();
+      this.scratchNode.port.postMessage({ type: 'start', pos, velocity });
+      this.emit({ type: 'state' });
+      return;
+    }
+    this.legacyScratchStart();
+  }
+
+  /** Move the virtual record by `delta` seconds of audio, over `dt` real seconds. */
+  scratchMove(delta: number, dt: number) {
+    if (!this.scratching || !this.buffer) return;
+    if (this.scratchNode) {
+      this.scratchPos = Math.max(0, Math.min(this.duration - 0.01, this.scratchPos + delta));
+      this.scratchNode.port.postMessage({ type: 'target', pos: this.scratchPos });
+      return;
+    }
+    this.legacyScratchMove(delta, dt);
+  }
+
+  scratchEnd() {
+    if (!this.scratching) return;
+    if (this.scratchNode) {
+      const pos = Math.max(0, Math.min(this.duration - 0.01, this.workletPos));
+      this.scratchNode.port.postMessage({ type: 'stop' });
+      this.scratching = false;
+      this.dir = 1;
+      this.rate = this.tempoRate * (1 + this.nudgeAmt);
+      this.anchorPos = pos;
+      this.playing = this.scratchWasPlaying;
+      this.updatePitch();
+      if (this.playing) this.startSource(pos);
+      this.emit({ type: 'state' });
+      return;
+    }
+    this.legacyScratchEnd();
+  }
+
+  // ---- fallback for browsers without AudioWorklet: restart sources to follow the hand
+
+  private legacyScratchStart() {
     this.scratching = true;
     this.scratchCount++;
     this.scratchWasPlaying = this.playing;
@@ -486,9 +611,7 @@ export class Deck {
     this.emit({ type: 'state' });
   }
 
-  /** Move the virtual record by `delta` seconds of audio, over `dt` real seconds. */
-  scratchMove(delta: number, dt: number) {
-    if (!this.scratching || !this.buffer) return;
+  private legacyScratchMove(delta: number, dt: number) {
     const target = Math.max(0, Math.min(this.duration - 0.01, this.scratchPos + delta));
     const vel = dt > 0 ? delta / dt : 0;
     const speed = Math.min(4, Math.abs(vel));
@@ -523,8 +646,7 @@ export class Deck {
     this.anchorPos = this.scratchPos;
   }
 
-  scratchEnd() {
-    if (!this.scratching) return;
+  private legacyScratchEnd() {
     if (this.scratchIdle) clearTimeout(this.scratchIdle);
     const pos = this.src ? this.getPosition() : this.scratchPos;
     this.scratching = false;

@@ -13,7 +13,7 @@ import { syncDeck } from '../state/deckActions';
 import { triggerSound } from '../features/beats/Pads';
 
 export interface Snapshot {
-  project: Pick<Project, 'mixer' | 'fx' | 'beats' | 'build'> & { tempos: Record<DeckId, number>; hotCues: Record<DeckId, (number | null)[]> };
+  project: Pick<Project, 'mixer' | 'fx' | 'beats' | 'build'> & { tempos: Record<DeckId, number>; keys: Record<DeckId, { lock: boolean; shift: number }>; hotCues: Record<DeckId, (number | null)[]> };
   loops: Record<DeckId, { loop: LoopRegion | null; active: boolean }>;
   seqRunning: boolean;
 }
@@ -27,6 +27,7 @@ function take(): Snapshot {
       beats: p.beats,
       build: p.build,
       tempos: { A: p.decks.A.tempo, B: p.decks.B.tempo },
+      keys: { A: { lock: p.decks.A.keyLock, shift: p.decks.A.keyShift }, B: { lock: p.decks.B.keyLock, shift: p.decks.B.keyShift } },
       hotCues: { A: [...p.decks.A.hotCues], B: [...p.decks.B.hotCues] },
     },
     loops: {
@@ -46,6 +47,8 @@ export function restore(s: Snapshot) {
     p.build = s.project.build;
     for (const d of ['A', 'B'] as DeckId[]) {
       p.decks[d].tempo = s.project.tempos[d];
+      p.decks[d].keyLock = s.project.keys[d].lock;
+      p.decks[d].keyShift = s.project.keys[d].shift;
       p.decks[d].hotCues = s.project.hotCues[d];
     }
   });
@@ -71,6 +74,10 @@ export function describe(a: AssistantAction): string {
       return `${deck} tempo → ${a.value! > 0 ? '+' : ''}${a.value}%`;
     case 'sync_tempo':
       return `${deck}: sync tempo & beats to the other deck`;
+    case 'set_key_lock':
+      return `${deck} key lock ${a.enabled ? 'on' : 'off'}`;
+    case 'set_key_shift':
+      return `${deck} key shift → ${a.value! > 0 ? '+' : ''}${a.value} semitones`;
     case 'set_fx': {
       const p = a.params ?? {};
       const parts = Object.entries(p).map(([k, v]) => `${k} ${typeof v === 'number' ? (Math.abs(v) <= 1 && k !== 'time' && k !== 'decay' && k !== 'rate' ? `${Math.round(v * 100)}%` : v) : v}`);
@@ -120,6 +127,12 @@ export function applyActions(actions: AssistantAction[], opts: { preview?: boole
           p.decks[d!].tempoRange = r as 8 | 16 | 50;
           p.decks[d!].tempo = a.value!;
         });
+        break;
+      case 'set_key_lock':
+        mutate((p) => void (p.decks[d!].keyLock = !!a.enabled));
+        break;
+      case 'set_key_shift':
+        mutate((p) => void (p.decks[d!].keyShift = a.value!));
         break;
       case 'sync_tempo':
         if (!syncDeck(d!)) notes.push('Sync needs tracks with known tempo on both decks.');

@@ -5,8 +5,10 @@ import { getStatus, type ServiceStatus } from '../../ai/client';
 import { engine } from '../../audio/engine';
 import { demoCatalog, PLANNED_INTEGRATIONS } from '../../catalog/registry';
 import { clearAllData } from '../../project/storage';
+import { clearRenders } from '../../catalog/pcmCache';
 import { Confirm } from '../../ui/Modal';
 import { ModeSwitch } from '../studio/Studio';
+import { ControllerSettings } from './ControllerSettings';
 
 function Section({ icon: Icon, title, children }: { icon: typeof Bot; title: string; children: React.ReactNode }) {
   return (
@@ -145,24 +147,62 @@ export function Settings() {
         </div>
         <div className="setting">
           <div>
+            <b>Audio processors</b>
+            <p className="small muted">
+              {engine.workletsReady
+                ? 'Running: key lock, key shift and vinyl-style scratching are available.'
+                : engine.workletError ?? 'Loading…'}
+            </p>
+          </div>
+        </div>
+        <div className="setting" data-testid="cue-settings">
+          <div>
             <b>Headphone cue (pre-listen)</b>
             <p className="small muted">
-              Sends decks with the headphone button (Pro mode) to a second audio output, such as a USB headset.{' '}
-              {engine.supportsSinkId ? 'Your browser supports choosing an output.' : 'Your browser can’t send audio to a second device, so headphone cue is unavailable here.'}
+              Hear a deck in your headphones before the crowd does — turn on the headphone button on a channel (Pro mode).
+              <br />
+              <b>Split</b> works with any headphones: the main mix plays in your left ear and the cued deck in your right (use a splitter cable to send the left side to speakers).{' '}
+              <b>Second device</b> sends the cue to another output such as a USB headset
+              {engine.supportsSinkId ? '.' : ' — your browser cannot choose output devices, so use Split.'}
             </p>
-            {devices && (
+            <div className="seg" role="group" aria-label="Headphone cue mode">
+              {(['off', 'split', 'device'] as const).map((m) => (
+                <button
+                  key={m}
+                  aria-pressed={settings.cueMode === m}
+                  disabled={m === 'device' && !engine.supportsSinkId}
+                  data-testid={`cue-mode-${m}`}
+                  onClick={async () => {
+                    if (m === 'device') {
+                      await listDevices();
+                      if (!settings.cueDeviceId) {
+                        update((s) => void (s.cueMode = 'device'));
+                        toast('info', 'Pick the output device for your headphones below.');
+                        return;
+                      }
+                    }
+                    const r = await engine.setCueMode(m, settings.cueDeviceId);
+                    toast(r.ok ? 'success' : 'error', r.message);
+                    if (r.ok) update((s) => void (s.cueMode = m));
+                  }}
+                >
+                  {m === 'off' ? 'Off' : m === 'split' ? 'Split (L/R)' : 'Second device'}
+                </button>
+              ))}
+            </div>
+            {settings.cueMode === 'device' && devices && (
               <select
                 className="select"
                 value={settings.cueDeviceId ?? ''}
                 onChange={async (e) => {
                   const id = e.target.value || null;
-                  const r = await engine.setCueDevice(id);
+                  const r = await engine.setCueMode(id ? 'device' : 'off', id);
                   toast(r.ok ? 'success' : 'error', r.message);
                   if (r.ok) update((s) => void (s.cueDeviceId = id));
                 }}
                 aria-label="Headphone output"
               >
-                <option value="">Off</option>
+                <option value="">Choose an output…</option>
                 {devices.map((d) => (
                   <option key={d.deviceId} value={d.deviceId}>
                     {d.label || `Output ${d.deviceId.slice(0, 6)}`}
@@ -171,17 +211,11 @@ export function Settings() {
               </select>
             )}
           </div>
-          <button className="btn sm" disabled={!engine.supportsSinkId} onClick={listDevices}>
-            Find outputs
-          </button>
         </div>
-        <div className="setting">
-          <div>
-            <b>DJ controllers</b>
-            <p className="small muted">Hardware controller support (MIDI/HID) is not available yet. The engine is designed so controllers can drive the same deck, mixer and effects actions later.</p>
-          </div>
-          <span className="chip">Coming later</span>
-        </div>
+      </Section>
+
+      <Section icon={Gamepad2} title="DJ controller (MIDI)">
+        <ControllerSettings />
       </Section>
 
       <Section icon={Keyboard} title="Keyboard">
@@ -210,7 +244,7 @@ export function Settings() {
 
       <Section icon={Database} title="Your data">
         <p className="small muted">
-          Mixes and preferences are stored in this browser only (no account needed). They contain track references and creative settings — never audio. Use Export in My Mixes to back up or move a mix.
+          Mixes and preferences are stored in this browser only (no account needed). They contain track references and creative settings — never audio. Rendered demo tracks are cached separately so they load instantly. Use Export in My Mixes to back up or move a mix.
         </p>
         <button className="btn danger sm" onClick={() => setConfirmReset(true)}>
           <Trash2 /> Delete all MIXPLAY data on this device
@@ -228,8 +262,9 @@ export function Settings() {
           confirmLabel="Delete everything"
           danger
           onCancel={() => setConfirmReset(false)}
-          onConfirm={() => {
+          onConfirm={async () => {
             clearAllData();
+            await clearRenders();
             location.hash = '/home';
             location.reload();
           }}

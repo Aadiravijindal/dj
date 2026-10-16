@@ -18,7 +18,8 @@ import {
   Magnet,
   OctagonPause,
   Eraser,
-  Info,
+  KeyRound,
+  Music2,
 } from 'lucide-react';
 import { engine } from '../../audio/engine';
 import type { DeckId } from '../../project/types';
@@ -211,12 +212,37 @@ export function DeckPanel({ id }: { id: DeckId }) {
                 {ds.tempo.toFixed(pro ? 2 : 1)}%
               </span>
               <span className="spacer" />
-              <span
-                className="keylock-note"
-                data-tip="Tempo works like a turntable: speeding up also raises the pitch. Pitch-preserving time-stretch (key lock) isn't available in this version."
+              {pro && (
+                <div className="keyshift" data-tip="Key shift: transpose this track up or down in semitones without changing its tempo — handy for harmonic mixing.">
+                  <Music2 size={13} />
+                  <button className="btn xs icon-btn" aria-label="Key down" disabled={!ready || !engine.workletsReady || ds.keyShift <= -6} onClick={() => mutate((p) => void (p.decks[id].keyShift -= 1))}>
+                    <Minus />
+                  </button>
+                  <span className="mono" data-testid={`keyshift-${id}`}>
+                    {ds.keyShift > 0 ? '+' : ''}
+                    {ds.keyShift}
+                  </span>
+                  <button className="btn xs icon-btn" aria-label="Key up" disabled={!ready || !engine.workletsReady || ds.keyShift >= 6} onClick={() => mutate((p) => void (p.decks[id].keyShift += 1))}>
+                    <Plus />
+                  </button>
+                </div>
+              )}
+              <button
+                className={`btn xs keylock${ds.keyLock && engine.workletsReady ? ' on' : ''}`}
+                aria-pressed={ds.keyLock && engine.workletsReady}
+                disabled={!engine.workletsReady}
+                data-testid={`keylock-${id}`}
+                onClick={() => mutate((p) => void (p.decks[id].keyLock = !p.decks[id].keyLock))}
+                data-tip={
+                  engine.workletsReady
+                    ? ds.keyLock
+                      ? 'Key lock on: changing tempo keeps the original pitch.'
+                      : 'Key lock off: tempo works like a turntable — faster also means higher pitch.'
+                    : engine.workletError ?? 'Loading audio processors…'
+                }
               >
-                <Info size={13} /> pitch follows tempo
-              </span>
+                <KeyRound /> Key lock
+              </button>
             </div>
             <div className="row">
               <button className="btn icon-btn xs" aria-label="Tempo down" disabled={!ready} onClick={() => D.setTempo(id, ds.tempo - (pro ? 0.1 : 0.5))}>

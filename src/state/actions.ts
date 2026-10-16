@@ -12,6 +12,7 @@ import { repository, StorageError } from '../project/storage';
 import { SAMPLE_PROJECTS } from '../project/samples';
 import { getTrackMeta, requestPlayback } from '../catalog/registry';
 import { PlaybackError } from '../catalog/types';
+import { midi } from '../midi/midi';
 
 const get = () => useApp.getState();
 
@@ -25,6 +26,8 @@ export function applyAllToEngine(p: Project = get().project) {
     engine.applyFx(id, p.fx[id]);
     const d = engine.decks[id];
     d.setTempo(p.decks[id].tempo);
+    d.setKeyLock(p.decks[id].keyLock);
+    d.setKeyShift(p.decks[id].keyShift);
     d.cuePoint = p.decks[id].cue;
     d.quantize = p.decks[id].quantize;
   }
@@ -50,6 +53,8 @@ export function startEngineSync() {
       const d = p.decks[id];
       const e = engine.decks[id];
       if (d.tempo !== q.decks[id].tempo) e.setTempo(d.tempo);
+      if (d.keyLock !== q.decks[id].keyLock) e.setKeyLock(d.keyLock);
+      if (d.keyShift !== q.decks[id].keyShift) e.setKeyShift(d.keyShift);
       if (d.quantize !== q.decks[id].quantize) e.quantize = d.quantize;
       if (d.cue !== q.decks[id].cue) e.cuePoint = d.cue;
     }
@@ -81,6 +86,11 @@ export function startEngineSync() {
       if (get().saveState === 'unsaved') saveProject({ quiet: true });
     }, 1500);
   });
+
+  // restore headphone cue routing and the MIDI controller from preferences
+  const st = get().settings;
+  if (st.cueMode === 'split') engine.setCueMode('split');
+  if (st.midiEnabled) midi.enable();
 
   // resume audio on the first user gesture (browser autoplay policy)
   const unlock = () => {

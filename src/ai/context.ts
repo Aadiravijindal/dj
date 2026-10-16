@@ -22,6 +22,8 @@ export interface DeckSnap {
   bpmSource: string | null;
   effectiveBpm: number | null;
   tempo: number;
+  keyLock: boolean;
+  keyShift: number;
   key: string | null;
   section: string | null;
   loop: { beats: number | null; active: boolean } | null;
@@ -74,6 +76,8 @@ export function snapshot(): StudioSnap {
       bpmSource: meta?.bpmSource ?? null,
       effectiveBpm: d?.effectiveBpm ?? null,
       tempo: p.decks[id].tempo,
+      keyLock: p.decks[id].keyLock,
+      keyShift: p.decks[id].keyShift,
       key: meta?.key ?? null,
       section: sections.find((x) => pos >= x.start && pos < x.end)?.name ?? null,
       loop: d?.loop ? { beats: d.loop.beats, active: d.loopActive } : null,
@@ -111,7 +115,7 @@ export function snapshotToText(s: StudioSnap): string {
     }
     lines.push(
       `- Deck ${id}: "${d.title}" by ${d.artist} (${d.genre}); ${d.playing ? 'PLAYING' : 'paused'} at ${fmtTime(d.position)} of ${fmtTime(d.duration)}` +
-        `${d.section ? `, section "${d.section}"` : ''}; original ${d.bpm ?? 'unknown'} BPM (${d.bpmSource ?? 'no tempo data'}), tempo ${d.tempo >= 0 ? '+' : ''}${d.tempo.toFixed(2)}% → ${d.effectiveBpm?.toFixed(2) ?? '?'} BPM; key ${d.key ?? 'unknown'}; ` +
+        `${d.section ? `, section "${d.section}"` : ''}; original ${d.bpm ?? 'unknown'} BPM (${d.bpmSource ?? 'no tempo data'}), tempo ${d.tempo >= 0 ? '+' : ''}${d.tempo.toFixed(2)}% → ${d.effectiveBpm?.toFixed(2) ?? '?'} BPM; key ${d.key ?? 'unknown'} (key lock ${d.keyLock ? 'on' : 'off'}, key shift ${d.keyShift} st); ` +
         `loop ${d.loop ? `${d.loop.beats ?? 'manual'} beats ${d.loop.active ? 'ACTIVE' : 'set but off'}` : 'none'}; fader ${Math.round(d.volume * 100)}%; EQ low ${d.eq.low} dB, mid ${d.eq.mid} dB, high ${d.eq.high} dB; ` +
         `FX: ${d.activeFx.length ? d.activeFx.map((f) => `${f.name} (${f.detail})`).join(', ') : 'none'}; current level ${dbfs(d.level)}`,
     );

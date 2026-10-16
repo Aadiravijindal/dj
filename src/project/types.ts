@@ -21,8 +21,12 @@ export interface SavedLoop extends LoopRegion {
 
 export interface DeckSettings {
   trackId: string | null;
-  /** tempo change in percent (vinyl style: tempo and pitch are linked) */
+  /** tempo change in percent */
   tempo: number;
+  /** key lock: keep the original pitch when the tempo changes */
+  keyLock: boolean;
+  /** transpose in semitones (-6..6), independent of tempo */
+  keyShift: number;
   tempoRange: 8 | 16 | 50;
   /** main cue point (seconds) */
   cue: number;

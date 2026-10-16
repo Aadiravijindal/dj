@@ -20,6 +20,7 @@ interface Props {
  */
 export function JogWheel({ id, vinyl, size = 168 }: Props) {
   const platter = useRef<HTMLDivElement>(null);
+  const wheel = useRef<HTMLDivElement>(null);
   const g = useRef<{ angle: number; t: number; mode: 'scratch' | 'nudge' | 'scrub'; cx: number; cy: number } | null>(null);
   const deck = engine.ctx ? engine.decks[id] : null;
 
@@ -28,7 +29,7 @@ export function JogWheel({ id, vinyl, size = 168 }: Props) {
     if (!el || !deck) return;
     const pos = deck.getPosition();
     el.style.transform = `rotate(${(pos / SECONDS_PER_REV) * 360}deg)`;
-    el.dataset.touch = g.current ? '1' : '0';
+    if (wheel.current) wheel.current.dataset.touch = g.current ? '1' : '0';
   });
 
   const angleOf = (e: React.PointerEvent) => {
@@ -76,36 +77,37 @@ export function JogWheel({ id, vinyl, size = 168 }: Props) {
 
   const meta = deck?.meta;
   return (
-    <div className={`jog deck-${id.toLowerCase()}${vinyl ? ' vinyl' : ''}`} style={{ width: size, height: size }}>
-      <div
-        className="jog-platter"
-        ref={platter}
-        role="slider"
-        aria-label={`Deck ${id} jog wheel — ${vinyl ? 'drag to scratch' : 'drag to nudge or scrub'}`}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={0}
-        tabIndex={0}
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerCancel={onUp}
-        onKeyDown={(e) => {
-          if (!deck || deck.status !== 'ready') return;
-          const step = e.shiftKey ? 1 : 0.1;
-          if (e.key === 'ArrowLeft') deck.scrub(-step);
-          else if (e.key === 'ArrowRight') deck.scrub(step);
-          else return;
-          e.preventDefault();
-        }}
-        onWheel={(e) => {
-          if (!deck || deck.status !== 'ready') return;
-          if (deck.playing) {
-            deck.nudge(e.deltaY > 0 ? -0.03 : 0.03);
-            setTimeout(() => deck.nudge(0), 120);
-          } else deck.scrub(e.deltaY > 0 ? 0.05 : -0.05);
-        }}
-      >
+    <div
+      className={`jog deck-${id.toLowerCase()}${vinyl ? ' vinyl' : ''}`}
+      style={{ width: size, height: size }}
+      ref={wheel}
+      role="slider"
+      aria-label={`Deck ${id} jog wheel — ${vinyl ? 'drag to scratch' : 'drag to nudge or scrub'}`}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={0}
+      tabIndex={0}
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+      onKeyDown={(e) => {
+        if (!deck || deck.status !== 'ready') return;
+        const step = e.shiftKey ? 1 : 0.1;
+        if (e.key === 'ArrowLeft') deck.scrub(-step);
+        else if (e.key === 'ArrowRight') deck.scrub(step);
+        else return;
+        e.preventDefault();
+      }}
+      onWheel={(e) => {
+        if (!deck || deck.status !== 'ready') return;
+        if (deck.playing) {
+          deck.nudge(e.deltaY > 0 ? -0.03 : 0.03);
+          setTimeout(() => deck.nudge(0), 120);
+        } else deck.scrub(e.deltaY > 0 ? 0.05 : -0.05);
+      }}
+    >
+      <div className="jog-platter" ref={platter}>
         <div className="jog-grooves" />
         <div className="jog-label">{meta ? <Artwork art={meta.artwork} size={size * 0.34} radius={size} /> : null}</div>
         <div className="jog-mark" />

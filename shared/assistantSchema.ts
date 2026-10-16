@@ -17,6 +17,8 @@ export const ACTION_TYPES = [
   'set_crossfader',
   'set_tempo',
   'sync_tempo',
+  'set_key_lock',
+  'set_key_shift',
   'set_fx',
   'set_loop',
   'clear_loop',
@@ -134,6 +136,12 @@ export function validateAction(a: AssistantAction): AssistantAction | null {
     case 'sync_tempo':
     case 'clear_loop':
       return needDeck() ? a : null;
+    case 'set_key_lock':
+      if (!needDeck() || a.enabled === undefined) return null;
+      return a;
+    case 'set_key_shift':
+      if (!needDeck() || a.value === undefined) return null;
+      return { ...a, value: clamp(Math.round(a.value), -6, 6) };
     case 'set_fx': {
       if (!needDeck() || !a.effect) return null;
       const p = { ...(a.params ?? {}) };

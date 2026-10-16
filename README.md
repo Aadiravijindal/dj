@@ -5,37 +5,45 @@
 
 MIXPLAY is a browser DJ studio for everyone: two decks, a real mixer, effects, loops, cue points, scratch-capable jog wheels, a beat sequencer, performance pads, a Build & Drop workspace, a mix timeline, and a creative AI assistant. **You are the DJ. AI is your creative assistant.** The assistant suggests; nothing changes until you press Apply.
 
-## Quick start
+## How to run it
+
+**You need:** [Node.js](https://nodejs.org) 20.11 or newer (includes npm) and a modern browser (Chrome, Edge, Firefox or Safari).
 
 ```bash
+git clone https://github.com/Aadiravijindal/dj.git mixplay
+cd mixplay
+git checkout claude/vibrant-bohr-v1w4z5   # until it's merged
 npm install
-npm run dev          # http://localhost:5173 (app + API in one process)
+npm run dev
 ```
 
-Production:
+Open **http://localhost:5173**, click anywhere once (browsers only allow sound after a click), and choose *I'm new to DJing → Open the demo mix*.
+
+**Production build** (one Node process serves the app and the API):
 
 ```bash
 npm run build
-npm start            # serves dist/ and the API on PORT (default 8787)
+npm start                  # http://localhost:8787  (set PORT to change)
 ```
 
-No accounts or keys are needed. Optional configuration lives on the **server** only (see `.env.example`):
+**Optional — real AI assistant.** Create a `.env` file in the project folder (see `.env.example`) and restart:
 
-| Variable | Purpose |
-| --- | --- |
-| `ANTHROPIC_API_KEY` | Enables the real AI assistant (Claude). Never sent to the browser. |
-| `MIXPLAY_AI_MODEL` | Optional model override (default `claude-opus-5-5`). |
-| `PORT` | Port for `npm start`. |
+```bash
+ANTHROPIC_API_KEY=sk-ant-...      # server-side only, never sent to the browser
+MIXPLAY_AI_MODEL=claude-opus-5-5  # optional
+```
 
-Without a key the assistant runs as a clearly labelled **demo assistant** (rule-based, not an AI model) that reads the same measured studio data and returns the same validated suggestions.
+Without a key everything still works; the assistant runs as a clearly labelled demo.
+
+**Optional — headphones and controllers.** In *Settings → Audio* turn on *Split (L/R)* cue (main mix in the left ear, cued deck in the right) or pick a second output device. In *Settings → DJ controller* press *Connect MIDI*, then *Learn* next to an action and move the control on your hardware.
 
 ## What's in the box
 
 | Area | What actually works |
 | --- | --- |
-| **DJ Studio** | Two decks with play/pause, CUE (CDJ-style), 4 or 8 hot cues, seek, waveform (3-band colour, beat grid, zoom 2–32 s, section labels), tempo ±8/16/50 %, nudge, Sync (tempo + beat phase), brake, quantize, keyboard shortcuts. |
-| **Mixer** | Trim, 3-band EQ (with kill), channel faders, equal-power or sharp crossfader, master, peak meters, pre-limiter clip LED, always-on safety limiter, mute, headphone cue to a second output (where `setSinkId` is supported). |
-| **Jog wheels** | Vinyl mode scratches forward *and* backward (reversed-buffer playback following your hand speed); otherwise the wheel nudges tempo while playing or scrubs while paused. Dragging the zoomed waveform scratches too. |
+| **DJ Studio** | Two decks with play/pause, CUE (CDJ-style), 4 or 8 hot cues, seek, waveform (3-band colour, beat grid, zoom 2–32 s, section labels), tempo ±8/16/50 % with **key lock**, **key shift** ±6 semitones, nudge, Sync (tempo + beat phase), brake, quantize, keyboard shortcuts and **MIDI controllers**. |
+| **Mixer** | Trim, 3-band EQ (with kill), channel faders, equal-power or sharp crossfader, master, peak meters, pre-limiter clip LED, always-on safety limiter, mute, headphone cue (**split L/R** on any output, or a second output device). |
+| **Jog wheels** | Vinyl mode scratches forward *and* backward on a sample-accurate worklet with record-like inertia; otherwise the wheel nudges tempo while playing or scrubs while paused. Dragging the zoomed waveform scratches too. |
 | **Effects** | Per deck: bipolar filter (low-pass ↔ high-pass, resonance), beat-synced echo, reverb, flanger, phaser, drive — plus beginner macros (“Build tension”, “Make it spacious”, …). Feedback is capped; nothing can run away. |
 | **Loops & cues** | Auto loops ¼–16 beats, loop in/out, halve/double, saved loops, beat repeat with slip (Pro), hot cues saved in the mix. |
 | **Beat Playground** | 16-step sequencer (multiple saved patterns, accents, swing, per-row sound/volume/mute) scheduled on the audio clock, optionally locked to a deck's tempo and bar. 16 assignable pads (one-shots and tempo-locked loops), quantised to the music. |
@@ -51,19 +59,22 @@ There is no licensed commercial catalog connected, and MIXPLAY never pretends ot
 
 The catalog layer (`src/catalog/types.ts`) is a provider interface — search, metadata, artwork, availability, authorised playback — so a properly licensed catalog can be added later without touching the studio. A separate, optional “My files” tab decodes local audio for the current session only (tempo labelled *estimated*).
 
-## Honest limitations
+## Notes and requirements
 
-- Tempo changes are vinyl-style (pitch follows tempo). Pitch-preserving time-stretch / key lock is not implemented and the UI says so.
-- Browser scratching follows your hand speed and direction but can't match a real turntable's feel.
-- Headphone cue requires a browser with `HTMLMediaElement.setSinkId` and a second output device.
-- Hardware DJ controllers (MIDI/HID) are not supported yet; the engine API is ready for it.
-- Demo tracks take ~1–3 s to render the first time they're loaded (cached afterwards in memory).
+- **Key lock / key shift** use an AudioWorklet pitch shifter (two crossfaded delay-line heads, 40 ms window). It adds a constant 20 ms latency to both decks, and pads/beats are delayed by the same amount so everything stays in time. Large shifts (beyond about ±15 %) get audibly grainier — the usual trade-off of real-time shifting.
+- **Scratching** runs on a sample-accurate AudioWorklet: the virtual record follows your hand through a critically damped spring, so it accelerates, stops and reverses smoothly. Browsers without AudioWorklet fall back to the simpler source-restart scratch.
+- **Headphone cue** works everywhere in *Split* mode; *Second device* needs `HTMLMediaElement.setSinkId` (Chromium-based browsers).
+- **MIDI controllers** need Web MIDI (Chrome, Edge, Opera, Firefox — not Safari). Any class-compliant controller can be mapped with MIDI learn; jog wheels use the common relative encoding.
+- **Demo tracks** are synthesised once per browser and cached in IndexedDB (~18 MB each); the whole catalog is pre-rendered in the background, so later loads take well under a second.
 
 ## Testing
 
 ```bash
 npm test             # unit tests (schema, demo assistant, DSP/analysis, persistence, server w/ mocked model)
-npm run test:e2e     # Playwright: the 10 acceptance scenarios + performance interactions
+npm run test:e2e     # Playwright (Chromium): acceptance scenarios, interactions, key lock, scratch, cue, MIDI, cache
+# other browsers:
+npx playwright install firefox webkit
+PW_ALL_BROWSERS=1 npm run test:e2e
 ```
 
 The end-to-end tests check real audio, not just UI state: they read the engine's analysers to confirm both decks are audible, the crossfader isolates decks, filters remove >30 dB in the target band, loops wrap within the loop region, the sequencer produces sound, and so on.
